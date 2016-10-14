@@ -1,1 +1,4 @@
 *~
+images
+*.zip
+__pycache__

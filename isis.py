@@ -21,6 +21,7 @@
 import argparse
 import fnmatch
 import os
+import zipfile
 
 from imagedisk import ImageDisk
 
@@ -91,6 +92,27 @@ def get_file_given_link_addr(imd, link_addr):
 
     return data
 
+def print_file_block_addresses(link_addr):
+    expected_prev_link_addr = (0, 0)
+    eof_reached = False
+    data = bytearray()
+
+    while link_addr != (0, 0):
+        link_block = get_sector(imd, link_addr)
+        prev_link_addr = (link_block[1], link_block[0])
+        next_link_addr = (link_block[3], link_block[2])
+        assert prev_link_addr == expected_prev_link_addr
+        for i in range(4, bytes_per_sector, 2):
+            data_block_addr = (link_block[i+1], link_block[i])
+            if eof_reached:
+                assert data_block_addr == (0, 0)
+            elif data_block_addr == (0, 0):
+                eof_reached = True
+            else:
+                print('    %d %d' % (data_block_addr[0], data_block_addr[1]))
+        expected_prev_link_addr = link_addr
+        link_addr = next_link_addr
+
 
 # system files
 # locations of bootstrap blocks are assumed
@@ -112,12 +134,19 @@ action_parser = parser.add_mutually_exclusive_group()
 action_parser.add_argument('-v', '--dir', dest='dir', action='store_true', help = 'show directory')
 action_parser.add_argument('-x', '--extract', dest='extract', action='store_true', help = 'extract files')
 
-parser.add_argument('-d', '--destdir', type = str, help = 'destination directory')
+dest_parser = parser.add_mutually_exclusive_group()
+dest_parser.add_argument('-d', '--destdir', type = str, help = 'destination directory')
+dest_parser.add_argument('-z', '--destzip', type=argparse.FileType('wb'), help = 'destination ZIP file')
 
 parser.add_argument('-r', '--raw', action = 'store_true', help = 'use a raw binary file rather than an ImageDisk image')
+
+parser.add_argument('--debug', action = 'store_true', help = argparse.SUPPRESS)
+
+
 parser.add_argument('image',   type=argparse.FileType('rb'), help = 'floppy image')
 
 parser.add_argument('pattern', type = str, nargs = '?', help = 'filename pattern')
+
 
 args = parser.parse_args()
 
@@ -128,6 +157,9 @@ if args.raw:
     imd = load_raw_image(args.image)
 else:
     imd = ImageDisk(args.image)
+
+if args.destzip is not None:
+    destzip = zipfile.ZipFile(args.destzip, 'w', compression = zipfile.ZIP_DEFLATED)
 
 dir_link_addr = (1, 1)
 dir = get_file_given_link_addr(imd, dir_link_addr)
@@ -162,6 +194,8 @@ for i in range(len(dir)//16):
 
     if args.dir:
         print('%-10s %s %6d (%3d,%3d)' % (filename, attributes, file_length, link_addr[0], link_addr[1]))
+        if args.debug:
+            print_file_block_addresses(link_addr)
         continue
 
     if args.extract:
@@ -169,10 +203,13 @@ for i in range(len(dir)//16):
         #print('file length, dir: %d  based on link blocks: %d' % (file_length, len(file_data)))
         assert len(file_data) >= file_length
         file_data = file_data[:file_length]
-        if args.destdir is not None:
-            path = os.path.join(args.destdir, filename)
-        else:
-            path = filename
-        with open(path, 'wb') as f:
-            f.write(file_data)
 
+        if destzip is not None:
+            destzip.writestr(filename, file_data)
+        else:
+            if args.destdir is not None:
+                path = os.path.join(args.destdir, filename)
+            else:
+                path = filename
+            with open(path, 'wb') as f:
+                f.write(file_data)
