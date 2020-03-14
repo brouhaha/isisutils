@@ -160,6 +160,8 @@ else:
 
 if args.destzip is not None:
     destzip = zipfile.ZipFile(args.destzip, 'w', compression = zipfile.ZIP_DEFLATED)
+else:
+    destzip = None
 
 dir_link_addr = (1, 1)
 dir = get_file_given_link_addr(imd, dir_link_addr)
