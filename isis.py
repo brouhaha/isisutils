@@ -215,3 +215,5 @@ for i in range(len(dir)//16):
                 path = filename
             with open(path, 'wb') as f:
                 f.write(file_data)
+if destzip is not None:
+    destzip.close()
